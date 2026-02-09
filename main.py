@@ -4,18 +4,22 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
+# =========================
+# FastAPI
+# =========================
+
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # =========================
-# 外部BBS API設定
+# 外部BBS API設定（Vercel）
 # =========================
 
-BBS_EXTERNAL_API_BASE_URL = "https://bbs-server.vercel.app/"
+BBS_EXTERNAL_API_BASE_URL = "https://bbs-server.vercel.app"
 MAX_API_WAIT_TIME = (3.0, 8.0)
 
 
-def get_random_user_agent():
+def get_user_agent():
     return {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -26,58 +30,96 @@ def get_random_user_agent():
 
 
 # =========================
-# 外部BBS APIアクセス
+# 外部BBS API 呼び出し
 # =========================
 
 async def fetch_bbs_posts():
-    """外部BBSから投稿一覧を取得"""
+    """投稿一覧取得"""
 
-    target_url = f"{BBS_EXTERNAL_API_BASE_URL}/posts"
+    url = f"{BBS_EXTERNAL_API_BASE_URL}/posts"
 
-    def sync_fetch():
+    def sync():
         res = requests.get(
-            target_url,
-            headers=get_random_user_agent(),
+            url,
+            headers=get_user_agent(),
             timeout=MAX_API_WAIT_TIME
         )
         res.raise_for_status()
         return res.json()
 
-    return await run_in_threadpool(sync_fetch)
+    return await run_in_threadpool(sync)
 
 
-async def post_new_message(client_ip: str, name: str, body: str):
-    """外部BBSへ新規投稿"""
+async def post_new_message(username: str, password: str, body: str):
+    """新規投稿"""
 
-    target_url = f"{BBS_EXTERNAL_API_BASE_URL}/post"
+    url = f"{BBS_EXTERNAL_API_BASE_URL}/post"
 
-    def sync_post():
-        headers = {
-            **get_random_user_agent(),
-            "X-Original-Client-IP": client_ip
-        }
+    def sync():
         res = requests.post(
-            target_url,
+            url,
+            headers=get_user_agent(),
             json={
-                "name": name,
+                "username": username,
+                "password": password,
                 "body": body
             },
-            headers=headers,
             timeout=MAX_API_WAIT_TIME
         )
         res.raise_for_status()
         return res.json()
 
-    return await run_in_threadpool(sync_post)
+    return await run_in_threadpool(sync)
+
+
+async def login_user(username: str, password: str):
+    """ログイン"""
+
+    url = f"{BBS_EXTERNAL_API_BASE_URL}/login"
+
+    def sync():
+        res = requests.post(
+            url,
+            headers=get_user_agent(),
+            json={
+                "username": username,
+                "password": password
+            },
+            timeout=MAX_API_WAIT_TIME
+        )
+        res.raise_for_status()
+        return res.json()
+
+    return await run_in_threadpool(sync)
+
+
+async def register_user(username: str, password: str):
+    """新規登録"""
+
+    url = f"{BBS_EXTERNAL_API_BASE_URL}/register"
+
+    def sync():
+        res = requests.post(
+            url,
+            headers=get_user_agent(),
+            json={
+                "username": username,
+                "password": password
+            },
+            timeout=MAX_API_WAIT_TIME
+        )
+        res.raise_for_status()
+        return res.json()
+
+    return await run_in_threadpool(sync)
 
 
 # =========================
-# APIルート（完全互換）
+# API（UI用プロキシ）
 # =========================
 
 @app.get("/api/bbs/posts")
-async def get_bbs_posts_route():
-    """投稿一覧取得API（保存なし）"""
+async def api_get_posts():
     try:
         return await fetch_bbs_posts()
 
@@ -88,45 +130,31 @@ async def get_bbs_posts_route():
             status_code=e.response.status_code
         )
 
-    except requests.exceptions.RequestException as e:
-        return Response(
-            content=f'{{"detail": "BBS API connection error or timeout: {str(e)}"}}',
-            media_type="application/json",
-            status_code=503
-        )
-
     except Exception as e:
         return Response(
-            content=f'{{"detail": "Unexpected error: {str(e)}"}}',
+            content=f'{{"detail":"{str(e)}"}}',
             media_type="application/json",
             status_code=500
         )
 
 
 @app.post("/api/bbs/post")
-async def post_new_message_route(request: Request):
-    """新規投稿API（保存なし）"""
+async def api_post_message(req: Request):
     try:
-        # クライアントIP（外部BBS互換）
-        client_ip = (
-            request.headers.get("X-Original-Client-IP")
-            or request.headers.get("X-Forwarded-For")
-            or request.client.host
-            or "unknown"
-        ).split(",")[0].strip()
+        data = await req.json()
 
-        data = await request.json()
-        name = data.get("name", "")
-        body = data.get("body", "")
+        username = data.get("username")
+        password = data.get("password")
+        body = data.get("body", "").strip()
 
-        if not body:
+        if not username or not password or not body:
             return Response(
-                content='{"detail": "Body is required"}',
+                content='{"detail":"username, password, body required"}',
                 media_type="application/json",
                 status_code=400
             )
 
-        return await post_new_message(client_ip, name, body)
+        return await post_new_message(username, password, body)
 
     except requests.exceptions.HTTPError as e:
         return Response(
@@ -135,29 +163,85 @@ async def post_new_message_route(request: Request):
             status_code=e.response.status_code
         )
 
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return Response(
-            content=f'{{"detail": "BBS API connection error or timeout: {str(e)}"}}',
+            content=f'{{"detail":"{str(e)}"}}',
             media_type="application/json",
-            status_code=503
+            status_code=500
+        )
+
+
+@app.post("/api/auth/login")
+async def api_login(req: Request):
+    try:
+        data = await req.json()
+        return await login_user(
+            data.get("username"),
+            data.get("password")
+        )
+
+    except requests.exceptions.HTTPError as e:
+        return Response(
+            content=e.response.text,
+            media_type="application/json",
+            status_code=e.response.status_code
         )
 
     except Exception as e:
         return Response(
-            content=f'{{"detail": "Unexpected error: {str(e)}"}}',
+            content=f'{{"detail":"{str(e)}"}}',
+            media_type="application/json",
+            status_code=500
+        )
+
+
+@app.post("/api/auth/register")
+async def api_register(req: Request):
+    try:
+        data = await req.json()
+        return await register_user(
+            data.get("username"),
+            data.get("password")
+        )
+
+    except requests.exceptions.HTTPError as e:
+        return Response(
+            content=e.response.text,
+            media_type="application/json",
+            status_code=e.response.status_code
+        )
+
+    except Exception as e:
+        return Response(
+            content=f'{{"detail":"{str(e)}"}}',
             media_type="application/json",
             status_code=500
         )
 
 
 # =========================
-# HTML
+# HTML ルート
 # =========================
 
 @app.get("/bbs", response_class=HTMLResponse)
-async def bbs(request: Request):
-    """掲示板ページ"""
+async def bbs_page(request: Request):
     return templates.TemplateResponse(
         "bbs.html",
+        {"request": request}
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request}
+    )
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse(
+        "register.html",
         {"request": request}
     )
