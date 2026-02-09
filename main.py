@@ -11,7 +11,7 @@ templates = Jinja2Templates(directory="templates")
 # 外部BBS API設定
 # =========================
 
-BBS_EXTERNAL_API_BASE_URL = "https://server-bbs.vercel.app"
+BBS_EXTERNAL_API_BASE_URL = "https://bbs-server.vercel.app/"
 MAX_API_WAIT_TIME = (3.0, 8.0)
 
 
