@@ -12,7 +12,8 @@ app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # =========================
-# 外部BBS API設定（Vercel）
+# 外部BBS API（Vercel）
+# ※ 末尾スラッシュ禁止
 # =========================
 
 BBS_EXTERNAL_API_BASE_URL = "https://bbs-server.vercel.app"
@@ -34,8 +35,6 @@ def get_user_agent():
 # =========================
 
 async def fetch_bbs_posts():
-    """投稿一覧取得"""
-
     url = f"{BBS_EXTERNAL_API_BASE_URL}/posts"
 
     def sync():
@@ -51,8 +50,6 @@ async def fetch_bbs_posts():
 
 
 async def post_new_message(username: str, password: str, body: str):
-    """新規投稿"""
-
     url = f"{BBS_EXTERNAL_API_BASE_URL}/post"
 
     def sync():
@@ -73,8 +70,6 @@ async def post_new_message(username: str, password: str, body: str):
 
 
 async def login_user(username: str, password: str):
-    """ログイン"""
-
     url = f"{BBS_EXTERNAL_API_BASE_URL}/login"
 
     def sync():
@@ -94,8 +89,6 @@ async def login_user(username: str, password: str):
 
 
 async def register_user(username: str, password: str):
-    """新規登録"""
-
     url = f"{BBS_EXTERNAL_API_BASE_URL}/register"
 
     def sync():
@@ -115,7 +108,7 @@ async def register_user(username: str, password: str):
 
 
 # =========================
-# API（UI用プロキシ）
+# API（フロント完全互換）
 # =========================
 
 @app.get("/api/bbs/posts")
@@ -139,17 +132,17 @@ async def api_get_posts():
 
 
 @app.post("/api/bbs/post")
-async def api_post_message(req: Request):
+async def api_post_message(request: Request):
     try:
-        data = await req.json()
+        data = await request.json()
 
-        username = data.get("username")
-        password = data.get("password")
+        username = data.get("username", "")
+        password = data.get("password", "")
         body = data.get("body", "").strip()
 
-        if not username or not password or not body:
+        if not body:
             return Response(
-                content='{"detail":"username, password, body required"}',
+                content='{"detail":"body is required"}',
                 media_type="application/json",
                 status_code=400
             )
@@ -172,9 +165,10 @@ async def api_post_message(req: Request):
 
 
 @app.post("/api/auth/login")
-async def api_login(req: Request):
+async def api_login(request: Request):
     try:
-        data = await req.json()
+        data = await request.json()
+
         return await login_user(
             data.get("username"),
             data.get("password")
@@ -196,9 +190,10 @@ async def api_login(req: Request):
 
 
 @app.post("/api/auth/register")
-async def api_register(req: Request):
+async def api_register(request: Request):
     try:
-        data = await req.json()
+        data = await request.json()
+
         return await register_user(
             data.get("username"),
             data.get("password")
@@ -220,7 +215,7 @@ async def api_register(req: Request):
 
 
 # =========================
-# HTML ルート
+# HTML ページ
 # =========================
 
 @app.get("/bbs", response_class=HTMLResponse)
