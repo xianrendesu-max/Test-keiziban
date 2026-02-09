@@ -20,12 +20,25 @@ body {
 input, button {
   width: 100%;
   margin-bottom: 12px;
-  padding: 8px;
+  padding: 10px;
+  font-size: 14px;
 }
 button {
   background: #16a34a;
   color: #fff;
   border: none;
+  cursor: pointer;
+}
+button:disabled {
+  background: #9ca3af;
+}
+.error {
+  color: #dc2626;
+  font-size: 14px;
+}
+.success {
+  color: #16a34a;
+  font-size: 14px;
 }
 </style>
 </head>
@@ -34,16 +47,65 @@ button {
 
 <div class="card">
   <h2>新規登録</h2>
-  <input placeholder="ユーザー名">
-  <input placeholder="メールアドレス">
-  <input type="password" placeholder="パスワード">
-  <button onclick="register()">登録</button>
+
+  <input id="username" placeholder="ユーザー名">
+  <input id="password" type="password" placeholder="パスワード">
+
+  <button id="btn" onclick="register()">登録</button>
+
+  <p class="error" id="error"></p>
+  <p class="success" id="success"></p>
+
   <p><a href="/login">ログインへ</a></p>
 </div>
 
 <script>
 async function register() {
-  alert("※ 登録API未実装（UIのみ）");
+  const btn = document.getElementById("btn");
+  const error = document.getElementById("error");
+  const success = document.getElementById("success");
+
+  error.textContent = "";
+  success.textContent = "";
+
+  const username = document.getElementById("username").value.trim();
+  const password = document.getElementById("password").value.trim();
+
+  if (!username || !password) {
+    error.textContent = "ユーザー名とパスワードを入力してください";
+    return;
+  }
+
+  btn.disabled = true;
+
+  try {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: username,
+        password: password
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      error.textContent = data.detail || "登録に失敗しました";
+      btn.disabled = false;
+      return;
+    }
+
+    success.textContent = "登録成功！ログインしてください";
+
+    setTimeout(() => {
+      location.href = "/login";
+    }, 1200);
+
+  } catch (e) {
+    error.textContent = "通信エラーが発生しました";
+    btn.disabled = false;
+  }
 }
 </script>
 
