@@ -51,7 +51,7 @@ main {
   margin-bottom: 16px;
 }
 
-textarea, input {
+textarea {
   width: 100%;
   padding: 8px;
   margin-bottom: 8px;
@@ -89,16 +89,13 @@ button {
 
 <header>
   <strong>Simple BBS</strong>
-  <nav>
-    <a href="/login">ログイン</a>
-    <a href="/register">新規登録</a>
-  </nav>
+  <nav id="nav"></nav>
 </header>
 
 <main>
 
 <div class="card">
-  <input id="name" placeholder="名前（省略可）">
+  <div id="loginUser"></div>
   <textarea id="body" rows="4" placeholder="投稿内容"></textarea>
   <button onclick="submitPost()">投稿</button>
 </div>
@@ -112,6 +109,31 @@ button {
 </main>
 
 <script>
+// =======================
+// ログインチェック
+// =======================
+
+const username = localStorage.getItem("username");
+const password = localStorage.getItem("password");
+
+if (!username || !password) {
+  location.href = "/login";
+}
+
+// ナビ表示
+document.getElementById("nav").innerHTML = `
+  <span>${escape(username)}</span>
+  <a href="#" onclick="logout()">ログアウト</a>
+`;
+
+// ユーザー表示
+document.getElementById("loginUser").textContent =
+  `ログイン中：${username}`;
+
+// =======================
+// 投稿取得
+// =======================
+
 async function loadPosts() {
   const el = document.getElementById("posts");
   el.textContent = "読み込み中…";
@@ -119,7 +141,7 @@ async function loadPosts() {
   try {
     const res = await fetch("/api/bbs/posts");
     const data = await res.json();
-    render(data.posts || []);
+    render(data);
   } catch {
     el.textContent = "取得失敗";
   }
@@ -134,7 +156,7 @@ function render(posts) {
     div.className = "post";
     div.innerHTML = `
       <div class="post-header">
-        ${escape(p.name || "名無し")} ID:${p.public_id}
+        ${escape(p.username)} / ${new Date(p.created_at).toLocaleString()}
       </div>
       <div>${escape(p.body)}</div>
     `;
@@ -142,20 +164,45 @@ function render(posts) {
   });
 }
 
+// =======================
+// 投稿
+// =======================
+
 async function submitPost() {
-  const name = document.getElementById("name").value;
   const body = document.getElementById("body").value.trim();
   if (!body) return;
 
-  await fetch("/api/bbs/post", {
+  const res = await fetch("/api/bbs/post", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({name, body})
+    body: JSON.stringify({
+      username: username,
+      password: password,
+      body: body
+    })
   });
+
+  if (!res.ok) {
+    alert("投稿失敗（ログイン切れの可能性）");
+    return;
+  }
 
   document.getElementById("body").value = "";
   loadPosts();
 }
+
+// =======================
+// ログアウト
+// =======================
+
+function logout() {
+  localStorage.clear();
+  location.href = "/login";
+}
+
+// =======================
+// XSS対策
+// =======================
 
 function escape(s) {
   return String(s).replace(/[&<>"']/g,
