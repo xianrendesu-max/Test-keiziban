@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ログイン</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body {
+  font-family: system-ui, sans-serif;
+  background: #f3f4f6;
+}
+.card {
+  max-width: 360px;
+  margin: 80px auto;
+  background: #fff;
+  padding: 24px;
+  border-radius: 8px;
+}
+input, button {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 8px;
+}
+button {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+  <h2>ログイン</h2>
+  <input id="email" placeholder="メールアドレス">
+  <input id="password" type="password" placeholder="パスワード">
+  <button onclick="login()">ログイン</button>
+  <p><a href="/register">新規登録はこちら</a></p>
+</div>
+
+<script>
+async function login() {
+  alert("※ 認証API未実装（UIのみ）");
+}
+</script>
+
+</body>
+</html>
