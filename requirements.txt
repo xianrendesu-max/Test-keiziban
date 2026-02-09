@@ -1,4 +1,7 @@
 fastapi
 uvicorn
-requests
 jinja2
+passlib[bcrypt]
+supabase
+requests
+python-multipart
