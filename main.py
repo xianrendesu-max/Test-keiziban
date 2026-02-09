@@ -1,242 +1,145 @@
-import requests
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, Response
+import os
+from datetime import datetime, timezone
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from starlette.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from supabase import create_client, Client
+from passlib.context import CryptContext
+from typing import Optional
 
-# =========================
-# FastAPI
-# =========================
+# =====================
+# 環境変数
+# =====================
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_URL / SUPABASE_KEY が未設定です")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# =====================
+# FastAPI 設定
+# =====================
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 本番では制限推奨
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 templates = Jinja2Templates(directory="templates")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# =========================
-# 外部BBS API（Vercel）
-# ※ 末尾スラッシュ禁止
-# =========================
+# =====================
+# Models
+# =====================
+class RegisterData(BaseModel):
+    username: str
+    password: str
 
-BBS_EXTERNAL_API_BASE_URL = "https://bbs-server.vercel.app"
-MAX_API_WAIT_TIME = (3.0, 8.0)
+class LoginData(BaseModel):
+    username: str
+    password: str
 
+class PostData(BaseModel):
+    body: str
+    username: Optional[str] = None  # フロントには不要
+    password: Optional[str] = None  # フロントには不要
 
-def get_user_agent():
-    return {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0 Safari/537.36"
-        )
-    }
-
-
-# =========================
-# 外部BBS API 呼び出し
-# =========================
-
-async def fetch_bbs_posts():
-    url = f"{BBS_EXTERNAL_API_BASE_URL}/posts"
-
-    def sync():
-        res = requests.get(
-            url,
-            headers=get_user_agent(),
-            timeout=MAX_API_WAIT_TIME
-        )
-        res.raise_for_status()
-        return res.json()
-
-    return await run_in_threadpool(sync)
-
-
-async def post_new_message(username: str, password: str, body: str):
-    url = f"{BBS_EXTERNAL_API_BASE_URL}/post"
-
-    def sync():
-        res = requests.post(
-            url,
-            headers=get_user_agent(),
-            json={
-                "username": username,
-                "password": password,
-                "body": body
-            },
-            timeout=MAX_API_WAIT_TIME
-        )
-        res.raise_for_status()
-        return res.json()
-
-    return await run_in_threadpool(sync)
-
-
-async def login_user(username: str, password: str):
-    url = f"{BBS_EXTERNAL_API_BASE_URL}/login"
-
-    def sync():
-        res = requests.post(
-            url,
-            headers=get_user_agent(),
-            json={
-                "username": username,
-                "password": password
-            },
-            timeout=MAX_API_WAIT_TIME
-        )
-        res.raise_for_status()
-        return res.json()
-
-    return await run_in_threadpool(sync)
-
-
-async def register_user(username: str, password: str):
-    url = f"{BBS_EXTERNAL_API_BASE_URL}/register"
-
-    def sync():
-        res = requests.post(
-            url,
-            headers=get_user_agent(),
-            json={
-                "username": username,
-                "password": password
-            },
-            timeout=MAX_API_WAIT_TIME
-        )
-        res.raise_for_status()
-        return res.json()
-
-    return await run_in_threadpool(sync)
-
-
-# =========================
-# API（フロント完全互換）
-# =========================
-
-@app.get("/api/bbs/posts")
-async def api_get_posts():
-    try:
-        return await fetch_bbs_posts()
-
-    except requests.exceptions.HTTPError as e:
-        return Response(
-            content=e.response.text,
-            media_type="application/json",
-            status_code=e.response.status_code
-        )
-
-    except Exception as e:
-        return Response(
-            content=f'{{"detail":"{str(e)}"}}',
-            media_type="application/json",
-            status_code=500
-        )
-
-
-@app.post("/api/bbs/post")
-async def api_post_message(request: Request):
-    try:
-        data = await request.json()
-
-        username = data.get("username", "")
-        password = data.get("password", "")
-        body = data.get("body", "").strip()
-
-        if not body:
-            return Response(
-                content='{"detail":"body is required"}',
-                media_type="application/json",
-                status_code=400
-            )
-
-        return await post_new_message(username, password, body)
-
-    except requests.exceptions.HTTPError as e:
-        return Response(
-            content=e.response.text,
-            media_type="application/json",
-            status_code=e.response.status_code
-        )
-
-    except Exception as e:
-        return Response(
-            content=f'{{"detail":"{str(e)}"}}',
-            media_type="application/json",
-            status_code=500
-        )
-
-
-@app.post("/api/auth/login")
-async def api_login(request: Request):
-    try:
-        data = await request.json()
-
-        return await login_user(
-            data.get("username"),
-            data.get("password")
-        )
-
-    except requests.exceptions.HTTPError as e:
-        return Response(
-            content=e.response.text,
-            media_type="application/json",
-            status_code=e.response.status_code
-        )
-
-    except Exception as e:
-        return Response(
-            content=f'{{"detail":"{str(e)}"}}',
-            media_type="application/json",
-            status_code=500
-        )
-
-
+# =====================
+# ユーザー登録
+# =====================
 @app.post("/api/auth/register")
-async def api_register(request: Request):
+async def register(data: RegisterData):
+    if len(data.username) < 3 or len(data.password) < 4:
+        raise HTTPException(status_code=400, detail="入力が短すぎます")
+
+    hashed = pwd_context.hash(data.password)
     try:
-        data = await request.json()
+        supabase.table("users").insert({
+            "username": data.username,
+            "password": hashed
+        }).execute()
+        return {"success": True}
+    except Exception:
+        raise HTTPException(status_code=409, detail="ユーザー名は既に使われています")
 
-        return await register_user(
-            data.get("username"),
-            data.get("password")
-        )
+# =====================
+# ログイン
+# =====================
+@app.post("/api/auth/login")
+async def login(data: LoginData):
+    res = supabase.table("users") \
+        .select("id, password") \
+        .eq("username", data.username) \
+        .limit(1) \
+        .execute()
 
-    except requests.exceptions.HTTPError as e:
-        return Response(
-            content=e.response.text,
-            media_type="application/json",
-            status_code=e.response.status_code
-        )
+    if not res.data:
+        raise HTTPException(status_code=401, detail="ユーザーが存在しません")
 
+    user = res.data[0]
+    if not pwd_context.verify(data.password, user["password"]):
+        raise HTTPException(status_code=401, detail="パスワードが違います")
+
+    return {"success": True, "user_id": user["id"], "username": data.username}
+
+# =====================
+# 投稿取得
+# =====================
+@app.get("/api/bbs/posts")
+async def get_posts():
+    try:
+        res = supabase.table("posts") \
+            .select("id, username, body, created_at") \
+            .order("created_at", desc=True) \
+            .execute()
+        return {"posts": res.data}
+    except Exception:
+        raise HTTPException(status_code=500, detail="投稿取得に失敗しました")
+
+# =====================
+# 投稿作成
+# =====================
+@app.post("/api/bbs/post")
+async def create_post(data: PostData, user_id: Optional[int] = None):
+    if not data.body.strip():
+        raise HTTPException(status_code=400, detail="本文が空です")
+
+    # フロントはログインユーザーIDを送る
+    if not user_id:
+        raise HTTPException(status_code=401, detail="ログインしてください")
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        supabase.table("posts").insert({
+            "user_id": user_id,
+            "username": data.username,
+            "body": data.body.strip(),
+            "created_at": now
+        }).execute()
+        return {"success": True}
     except Exception as e:
-        return Response(
-            content=f'{{"detail":"{str(e)}"}}',
-            media_type="application/json",
-            status_code=500
-        )
+        print(e)
+        raise HTTPException(status_code=500, detail="投稿に失敗しました")
 
-
-# =========================
-# HTML ページ
-# =========================
-
+# =====================
+# HTMLページ
+# =====================
 @app.get("/bbs", response_class=HTMLResponse)
 async def bbs_page(request: Request):
-    return templates.TemplateResponse(
-        "bbs.html",
-        {"request": request}
-    )
-
+    return templates.TemplateResponse("bbs.html", {"request": request})
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse(
-        "login.html",
-        {"request": request}
-    )
-
+    return templates.TemplateResponse("login.html", {"request": request})
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    return templates.TemplateResponse(
-        "register.html",
-        {"request": request}
-    )
+    return templates.TemplateResponse("register.html", {"request": request})
