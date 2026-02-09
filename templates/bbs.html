@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>BBS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+:root {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --primary: #2563eb;
+  --text: #111827;
+  --sub: #6b7280;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  background: var(--card);
+  border-bottom: 1px solid #e5e7eb;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header a {
+  text-decoration: none;
+  color: var(--primary);
+  margin-left: 12px;
+  font-size: 14px;
+}
+
+main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  margin-bottom: 16px;
+}
+
+textarea, input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+
+button {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.post {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.post-header {
+  font-size: 13px;
+  color: var(--sub);
+}
+
+.loading {
+  text-align: center;
+  color: var(--sub);
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <strong>Simple BBS</strong>
+  <nav>
+    <a href="/login">ログイン</a>
+    <a href="/register">新規登録</a>
+  </nav>
+</header>
+
+<main>
+
+<div class="card">
+  <input id="name" placeholder="名前（省略可）">
+  <textarea id="body" rows="4" placeholder="投稿内容"></textarea>
+  <button onclick="submitPost()">投稿</button>
+</div>
+
+<div class="card">
+  <button onclick="loadPosts()">再読み込み</button>
+</div>
+
+<div id="posts" class="card loading">読み込み中…</div>
+
+</main>
+
+<script>
+async function loadPosts() {
+  const el = document.getElementById("posts");
+  el.textContent = "読み込み中…";
+
+  try {
+    const res = await fetch("/api/bbs/posts");
+    const data = await res.json();
+    render(data.posts || []);
+  } catch {
+    el.textContent = "取得失敗";
+  }
+}
+
+function render(posts) {
+  const el = document.getElementById("posts");
+  el.innerHTML = "";
+
+  posts.forEach(p => {
+    const div = document.createElement("div");
+    div.className = "post";
+    div.innerHTML = `
+      <div class="post-header">
+        ${escape(p.name || "名無し")} ID:${p.public_id}
+      </div>
+      <div>${escape(p.body)}</div>
+    `;
+    el.appendChild(div);
+  });
+}
+
+async function submitPost() {
+  const name = document.getElementById("name").value;
+  const body = document.getElementById("body").value.trim();
+  if (!body) return;
+
+  await fetch("/api/bbs/post", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({name, body})
+  });
+
+  document.getElementById("body").value = "";
+  loadPosts();
+}
+
+function escape(s) {
+  return String(s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+loadPosts();
+</script>
+
+</body>
+</html>
